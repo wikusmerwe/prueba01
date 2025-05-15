@@ -1,0 +1,49 @@
+name: Despliegue Temporal React con Docker y Ngrok
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:  # Permite ejecución manual
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Paso 1: Checkout del código
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Paso 2: Configurar Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # Paso 3: Construir la imagen Docker
+      - name: Build Docker image
+        run: |
+          docker build -t my-react-app .
+
+      # Paso 4: Ejecutar el contenedor y exponerlo con ngrok
+      - name: Run container and expose with ngrok
+        run: |
+          # Iniciar el contenedor en segundo plano, exponiendo el puerto 3000 (típico de React)
+          docker run -d --name react-app -p 8080:3000 my-react-app
+
+          # Instalar ngrok y exponer el puerto 8080
+          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt update && sudo apt install -y ngrok
+          ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+          ngrok http 8080 > /dev/null &
+
+          # Esperar 5 segundos para que ngrok se inicie
+          sleep 5
+
+          # Obtener la URL pública de ngrok
+          NGROK_URL=$(curl -s localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+          echo "URL pública del servicio React: $NGROK_URL"
+
+          # Mantener el job activo (opcional, máximo 6 horas)
+          timeout 30m bash -c "while true; do sleep 60; done"
